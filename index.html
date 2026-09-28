@@ -1,0 +1,966 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover"
+    />
+    <title>Kommerz Raider</title>
+    <meta name="theme-color" content="#0b1220" />
+    <link rel="manifest" href="manifest.webmanifest" />
+    <link rel="icon" href="favicon.svg" type="image/svg+xml" />
+    <link rel="apple-touch-icon" href="icons/apple-touch-icon.png" />
+    <style>
+      /* Self-hosted type (V2): the technical backbone and the typewriter
+         flavour. Licences and provenance in public/fonts/. */
+      @font-face {
+        font-family: 'Jost';
+        font-style: normal;
+        font-weight: 400;
+        font-display: swap;
+        src: url('fonts/jost-400.woff2') format('woff2');
+      }
+      @font-face {
+        font-family: 'Jost';
+        font-style: normal;
+        font-weight: 600;
+        font-display: swap;
+        src: url('fonts/jost-600.woff2') format('woff2');
+      }
+      @font-face {
+        font-family: 'Cutive Mono';
+        font-style: normal;
+        font-weight: 400;
+        font-display: swap;
+        src: url('fonts/cutive-mono-400.woff2') format('woff2');
+      }
+      @font-face {
+        font-family: 'Special Elite';
+        font-style: normal;
+        font-weight: 400;
+        font-display: swap;
+        src: url('fonts/special-elite-400.woff2') format('woff2');
+      }
+      html,
+      body {
+        margin: 0;
+        padding: 0;
+        overflow: hidden;
+        height: 100%;
+        background: #000;
+      }
+      canvas {
+        display: block;
+        /* The battle view handles its own drag-pan and pinch-zoom, so the
+           browser must not claim touch gestures on the canvas. */
+        touch-action: none;
+      }
+      #hud {
+        position: fixed;
+        inset: 0;
+        /* The chart HUD's own tier (August 2026). It used to carry no
+           z-index, which was only safe while nothing was layered over the
+           canvas: both world renderers seat a canvas of their own BEHIND
+           the shared one and promote the shared one to z-index 1 to get
+           underneath it, and a positioned z-1 canvas paints above a
+           positioned z-auto div. So the plot covered the helm strip and
+           every tap meant for a button set a course instead. It sits below
+           the battle strip (4), the briefs (9), the cards (10) and the menu
+           tier (30), which is where it always belonged. */
+        z-index: 2;
+        pointer-events: none;
+        display: flex;
+        flex-direction: column;
+        justify-content: space-between;
+        font-family: var(--face-tech);
+        color: var(--ink);
+        padding: env(safe-area-inset-top) env(safe-area-inset-right)
+          env(safe-area-inset-bottom) env(safe-area-inset-left);
+      }
+      /* The readout lines sit tight (M4, small-iPhone playtest): the top
+         block and the bottom strip both overlay the chart, so every spare
+         pixel of padding here is stolen map. */
+      .hud-top {
+        padding: 4px 12px;
+        background: rgba(var(--ground-rgb), 0.75);
+      }
+      .hud-bottom {
+        padding: 6px 10px;
+        background: rgba(var(--ground-rgb), 0.75);
+      }
+      .hud-top,
+      .hud-row {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 8px;
+      }
+      .hud-row + .hud-row {
+        margin-top: 4px;
+      }
+      .hud-group {
+        display: flex;
+        gap: 6px;
+      }
+      .hud-top {
+        font-size: calc(14px * var(--text-scale, 1));
+        /* Lock the row height so the Jost swap can never grow the readout
+           block on a small iPhone (owner caveat, July 2026). */
+        line-height: 1.2;
+        font-variant-numeric: tabular-nums;
+      }
+      /* The ≡ button berths in the block's top-right corner, so the first
+         two rows' right-aligned readouts stop short of it. Two rows cover
+         the button's height at every text scale (the rows grow with the
+         scale; the button barely does). */
+      #hud > div:first-child > .hud-top:nth-child(-n + 2) {
+        padding-right: 60px;
+      }
+      /* The fuel readout is an inline tank gauge — JS fills the background to
+         the bunker level. Horizontal padding only, so the row keeps its
+         height (the HUD caveat). */
+      #hud-fuel {
+        display: inline-block;
+        padding: 0 5px;
+        border-radius: 3px;
+      }
+      /* The reports pip and its count stay on one piece. */
+      #hud-reports {
+        white-space: nowrap;
+      }
+      .hud-message {
+        margin: 8px auto 0;
+        padding: 8px 14px;
+        background: rgba(var(--ground-rgb), 0.85);
+        border-radius: 6px;
+        font-size: calc(14px * var(--text-scale, 1));
+        max-width: 85%;
+        text-align: center;
+        /* The wireless line reads as the ship's log, in the typewriter. */
+        font-family: var(--face-type);
+      }
+      /* A radiogram takes the distressed telegram face (Special Elite). */
+      .hud-message.telegram {
+        font-family: var(--face-stamp);
+      }
+      /* Sim-card narrative in the typewriter flavour on warm paper; the
+         title takes the brass accent. Scoped to #card so the About screen's
+         legal text (which reuses .card grammar) keeps the technical face. */
+      #card .card-title {
+        color: var(--brass);
+      }
+      #card .card-body {
+        font-family: var(--face-type);
+        line-height: 1.55;
+        color: var(--flavour);
+      }
+      /* The misclick guard greys the options for its 1.5 s beat. */
+      #card .card-option:disabled {
+        opacity: 0.4;
+        cursor: default;
+      }
+      /* A locked option — an unaffordable refit, shown so the player learns
+         it exists. Dimmed but still readable (the cost is the whole point),
+         with a dashed edge reading as 'not yet requisitioned' rather than a
+         live control. Wins the transient greying above so the figure stays
+         legible. */
+      #card .card-option-locked:disabled {
+        opacity: 0.7;
+        cursor: default;
+        background: rgba(var(--ground-rgb), 0.5);
+        border-style: dashed;
+      }
+      /* Vital-info panel (patron standings on the home card): label muted,
+         value in its own colour so what you hold reads at a glance. */
+      #card .card-info {
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+        margin: 0 0 16px;
+        padding: 10px 12px;
+        background: rgba(var(--ground-rgb), 0.5);
+        border: 1px solid var(--chrome-line);
+        border-radius: 6px;
+        font-family: var(--face-tech);
+        font-size: calc(13px * var(--text-scale, 1));
+      }
+      #card .card-info-line {
+        display: flex;
+        justify-content: space-between;
+        gap: 12px;
+      }
+      #card .card-info-line span:first-child {
+        color: var(--ink-mute);
+      }
+      #card .card-info-value {
+        font-variant-numeric: tabular-nums;
+        font-weight: 600;
+      }
+      #hud-message-block {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+      }
+      /* The don't-show-these-again line under a hint (M5 ruling). */
+      #hud-hint-quiet {
+        pointer-events: auto;
+        display: none;
+        margin: 4px auto 0;
+        min-height: 30px;
+        padding: 2px 10px;
+        font-size: calc(12px * var(--text-scale, 1));
+        color: var(--ink-mute);
+        background: rgba(var(--ground-rgb), 0.85);
+        border: 1px solid var(--chrome-line);
+        border-radius: 6px;
+      }
+      /* touch-action on every control: iOS Safari otherwise reserves a
+         ~350 ms double-tap-zoom window, and rapid HUD taps zoom the page */
+      button {
+        touch-action: manipulation;
+        font-family: var(--face-tech);
+      }
+      #hud button {
+        pointer-events: auto;
+        /* Chart-HUD controls run 15% smaller than the 38px 10 mm floor
+           (owner request, July 2026: the strategic strip stole too much
+           chart on a small iPhone). Lands at 32px — still above the
+           battle strip's own 31px, and the ~10 mm rule is a soft floor. */
+        min-height: 32px;
+        min-width: 48px;
+        padding: 0 8.5px;
+        font-size: calc(11px * var(--text-scale, 1));
+        color: var(--ink);
+        background: var(--chrome);
+        border: 1px solid var(--chrome-line);
+        border-radius: 6px;
+      }
+      #hud button.active {
+        background: var(--chrome-active);
+        border-color: var(--chrome-active-line);
+      }
+      /* A greyed-out control holds its place but reads as unavailable —
+         e.g. the Arado at night keeps its slot instead of vanishing. */
+      #hud button:disabled {
+        opacity: 0.4;
+      }
+      #hud .officer-chip {
+        pointer-events: auto;
+        min-width: 44px;
+        width: 44px;
+        min-height: 44px;
+        height: 44px;
+        padding: 0;
+        border-radius: 50%;
+        overflow: hidden;
+      }
+      .officer-chip img {
+        width: 100%;
+        height: 100%;
+        display: block;
+        object-fit: cover; /* photographs of any aspect crop, never squash */
+      }
+      /* What became of a man, on the strip that is always on screen
+         (§10 O2): hurt is dimmed, lost is drained of colour and ringed
+         in the deficit ink. No badge, no icon — the wardroom is a row of
+         faces, and a face that has gone grey says it without furniture. */
+      #hud .officer-chip-hurt img {
+        opacity: 0.5;
+        filter: saturate(0.4);
+      }
+      #hud .officer-chip-lost {
+        border-color: rgb(var(--heat-rgb));
+      }
+      /* Gone but alive: drained like a loss, but no red edge — the ship
+         is not in mourning for a man in a French port. */
+      #hud .officer-chip-detached img {
+        opacity: 0.35;
+        filter: grayscale(1);
+      }
+      #hud .officer-chip-lost img {
+        opacity: 0.28;
+        filter: grayscale(1);
+      }
+      #hud .patron-chip {
+        border-radius: 8px; /* Berlin is square; the wardroom is round */
+        position: relative;
+      }
+      .patron-badge {
+        position: absolute;
+        right: 1px;
+        bottom: 1px;
+        padding: 0 3px;
+        border-radius: 6px;
+        background: rgba(var(--ground-rgb), 0.85);
+        font-size: calc(10px * var(--text-scale, 1));
+        line-height: 14px;
+        color: var(--ink);
+      }
+      /* The transient favour delta popped on a patron chip when the standing
+         moves (patronPanel adds it only when cosmetic motion is allowed).
+         Centred inside the chip so the round crop never clips it. */
+      .patron-delta {
+        position: absolute;
+        inset: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-family: var(--face-tech);
+        font-weight: 600;
+        font-size: calc(15px * var(--text-scale, 1));
+        background: rgba(var(--ground-rgb), 0.55);
+        pointer-events: none;
+        animation: favour-delta 2.4s ease-out forwards;
+      }
+      @keyframes favour-delta {
+        0% {
+          opacity: 0;
+          transform: translateY(6px);
+        }
+        15% {
+          opacity: 1;
+          transform: translateY(0);
+        }
+        70% {
+          opacity: 1;
+        }
+        100% {
+          opacity: 0;
+          transform: translateY(-6px);
+        }
+      }
+      .patron-standing {
+        font-size: calc(14px * var(--text-scale, 1));
+        margin-bottom: 4px;
+      }
+      .officer-detail {
+        position: fixed;
+        inset: 0;
+        z-index: 5; /* sim cards (#card) always outrank the wardroom */
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: var(--overlay);
+        font-family: var(--face-tech);
+        color: var(--ink);
+        /* Clear of the notch and the home indicator (owner request
+           August 2026): the card is capped at 90svh and centred, so
+           without this its top edge and its last button can sit under
+           the insets on a small iPhone — and a scrolled card would
+           scroll its text under them too. */
+        padding: max(16px, env(safe-area-inset-top))
+          max(16px, env(safe-area-inset-right))
+          max(16px, env(safe-area-inset-bottom))
+          max(16px, env(safe-area-inset-left));
+        pointer-events: auto;
+      }
+      .officer-card {
+        background: var(--panel);
+        border: 1px solid var(--chrome-line);
+        border-radius: 10px;
+        max-width: 340px;
+        width: 100%;
+        padding: 18px;
+        box-sizing: border-box;
+        text-align: center;
+      }
+      .officer-card img {
+        width: 160px;
+        height: 160px;
+        border-radius: 10px;
+        border: 1px solid var(--chrome-line);
+        object-fit: cover;
+      }
+      .officer-card h3 {
+        margin: 10px 0 2px;
+        font-size: calc(17px * var(--text-scale, 1));
+        letter-spacing: 0.02em;
+      }
+      .officer-role {
+        font-size: calc(13px * var(--text-scale, 1));
+        opacity: 0.75;
+        margin-bottom: 6px;
+      }
+      /* The wardroom card's figures (§10, O1): one row per skill the man
+         carries, in the card grammar's own credit/deficit ink — the
+         colour is set per row from the view, never here. */
+      .officer-effects {
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+        text-align: left;
+        margin: 8px 0 0;
+        font-size: calc(13px * var(--text-scale, 1));
+        letter-spacing: 0.01em;
+      }
+      .officer-notes p {
+        text-align: left;
+        font-size: calc(14px * var(--text-scale, 1));
+        line-height: 1.45;
+        margin: 8px 0 0;
+      }
+      #card,
+      #start {
+        position: fixed;
+        inset: 0;
+        z-index: 10;
+        display: none;
+        align-items: center;
+        justify-content: center;
+        background: var(--overlay);
+        font-family: var(--face-tech);
+        color: var(--ink);
+        padding: max(16px, env(safe-area-inset-top))
+          max(16px, env(safe-area-inset-right))
+          max(16px, env(safe-area-inset-bottom))
+          max(16px, env(safe-area-inset-left));
+      }
+      /* Every overlay in the game is a .card — sim cards, the epilogue,
+         the briefs, the menu tier, the title screen — so the fallback
+         belongs here and nowhere else (owner request August 2026): text
+         longer than the screen SCROLLS rather than pushing its own
+         buttons off the bottom. The cap is what makes it scroll: without
+         a max-height the box would simply grow past the viewport and the
+         Weiter button would be unreachable. */
+      .card {
+        background: var(--panel);
+        border: 1px solid var(--chrome-line);
+        border-radius: 10px;
+        max-width: 420px;
+        width: 100%;
+        /* svh: the small viewport unit ignores iOS Safari's collapsing
+           URL bar; the vh line is the fallback for older engines */
+        max-height: 90vh;
+        max-height: 90svh;
+        overflow-y: auto;
+        /* The scroll stops at the card's own edges instead of chaining
+           out to a page that cannot scroll — no rubber-banding the whole
+           game behind an open card on iOS. */
+        overscroll-behavior: contain;
+        padding: 18px;
+        box-sizing: border-box;
+      }
+      .card-title {
+        margin: 0 0 10px;
+        font-size: calc(18px * var(--text-scale, 1));
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+      }
+      /* The epilogue's art banner: a fixed 16:9 frame above the title, so
+         the card's height never depends on the picture that arrives in it
+         (art is swappable data — portraits rule). */
+      .card-image {
+        display: block;
+        width: 100%;
+        aspect-ratio: 16 / 9;
+        object-fit: cover;
+        border: 1px solid var(--chrome-line);
+        border-radius: 6px;
+        margin: 0 0 12px;
+      }
+      .card-body {
+        margin: 0 0 16px;
+        font-size: calc(15px * var(--text-scale, 1));
+        line-height: 1.45;
+      }
+      .card-options {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+      }
+      /* Two options sharing one line (the context-loss notice, owner
+         request Aug 2026): the same grammar, laid across. */
+      .card-option-row {
+        display: flex;
+        gap: 8px;
+      }
+      .card-option-row .card-option {
+        flex: 1;
+      }
+      .card-option {
+        display: flex;
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 2px;
+        text-align: left;
+        min-height: 44px;
+        padding: 10px 12px;
+        font-size: calc(14px * var(--text-scale, 1));
+        color: var(--ink);
+        background: var(--chrome);
+        border: 1px solid var(--chrome-line);
+        border-radius: 6px;
+      }
+      .card-option-label {
+        font-weight: 600;
+      }
+      .card-option-detail {
+        font-size: calc(12px * var(--text-scale, 1));
+        color: var(--ink-mute);
+      }
+      /* Why a locked option is locked (owner report, playtest round five):
+         its own red row under the effects — the one part of a dimmed
+         option that must still shout. */
+      .card-option-lock-reason {
+        display: block;
+        margin-top: 2px;
+        font-family: var(--face-tech);
+        font-size: calc(11.5px * var(--text-scale, 1));
+        font-weight: 600;
+        color: rgb(var(--heat-rgb));
+      }
+      /* The exact effects of an event option, itemized (§6 ruling, July
+         2026): short technical-face rows under the detail, each coloured
+         inline by the view's credit/deficit grammar. */
+      .card-option-effects {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 2px 12px;
+        margin-top: 2px;
+        font-family: var(--face-tech);
+        font-size: calc(11.5px * var(--text-scale, 1));
+      }
+      #battle-hud {
+        position: fixed;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        z-index: 4;
+        display: none;
+        flex-direction: column;
+        font-family: var(--face-tech);
+        color: var(--ink);
+        padding: 4px 10px calc(6px + env(safe-area-inset-bottom));
+        background: rgba(var(--ground-rgb), 0.75);
+        /* The strip may never take more than 40% of the screen (owner
+           ruling 18 Jul 2026, raising the M4 one-third cap: everything
+           should fit, but half a screen of controls never); a
+           many-emergencies pile-up still scrolls — inside #battle-scroll,
+           so the floating banner above stays unclipped. svh/vh as .card. */
+        max-height: 40vh;
+        max-height: 40svh;
+        box-sizing: border-box;
+      }
+      #battle-hud #battle-scroll {
+        overflow-y: auto;
+        min-height: 0;
+      }
+      /* Rows and buttons run tighter than the chart HUD's, cut ~10% on
+         the owner's 18 Jul 2026 ruling so a full crisis fits the 40% cap.
+         The effective tap pitch lands at ~9 mm — a knowing trade against
+         the ~10 mm guidance, owner-accepted. */
+      #battle-hud .hud-row + .hud-row {
+        margin-top: 2px;
+      }
+      #battle-hud .hud-group {
+        gap: 4px;
+      }
+      #battle-hud button {
+        min-height: 31px;
+        min-width: 40px;
+        padding: 0 7px;
+        font-size: calc(11.5px * var(--text-scale, 1));
+        color: var(--ink);
+        background: var(--chrome);
+        border: 1px solid var(--chrome-line);
+        border-radius: 6px;
+      }
+      /* The ruled cluster labels (owner ruling 18 Jul 2026): three
+         instruments in the player's loop order — steer, shoot, survive —
+         in the chart's typewriter voice, so nine rows never read as one
+         undifferentiated button wall. */
+      #battle-hud .battle-cluster {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        margin: 3px 0 2px;
+        font-family: var(--face-type);
+        font-size: calc(9px * var(--text-scale, 1));
+        line-height: 1.1;
+        letter-spacing: 0.18em;
+        text-transform: uppercase;
+        color: rgba(170, 182, 200, 0.66);
+      }
+      #battle-hud .battle-cluster::after {
+        content: '';
+        flex: 1;
+        border-top: 1px solid rgba(53, 80, 122, 0.5);
+      }
+      #battle-hud button.active {
+        background: var(--chrome-active);
+        border-color: var(--chrome-active-line);
+      }
+      #battle-hud button.danger {
+        background: var(--danger);
+        border-color: var(--danger-line);
+      }
+      #battle-hud .battle-hint {
+        font-size: calc(11px * var(--text-scale, 1));
+        color: var(--ink-mute);
+        margin-bottom: 2px;
+        text-align: center;
+      }
+      #battle-hud .battle-tempo {
+        font-size: calc(12px * var(--text-scale, 1));
+        color: var(--ink-mute);
+        min-width: 28px;
+        text-align: right;
+      }
+      /* The camera's own button, not a ship's order (owner report 19 Jul
+         2026, the escorts test): it floats over the plane it steers, at
+         the strip's corner on the banner's shelf, in the menu button's
+         round translucent chrome. Shown only once the camera is manual. */
+      #battle-hud #battle-recenter {
+        position: absolute;
+        right: 10px;
+        bottom: calc(100% + 8px);
+        min-width: 40px;
+        min-height: 40px;
+        padding: 0;
+        border-radius: 50%;
+        background: rgba(var(--chrome-rgb), 0.9);
+        font-size: calc(16px * var(--text-scale, 1));
+        line-height: 1;
+      }
+      #battle-hud .battle-aim-label {
+        font-size: calc(11px * var(--text-scale, 1));
+        color: var(--ink-mute);
+        align-self: center;
+      }
+      #battle-hud #battle-aim {
+        flex-wrap: wrap;
+        justify-content: flex-end;
+      }
+      /* The aim/parties/battery/torps rows carry the most buttons; the
+         smaller face keeps "Radio" on one line with the rest (M4, small
+         iPhone), sized down with the rest of the strip (18 Jul 2026). */
+      #battle-hud #battle-aim button {
+        min-width: 30px;
+        padding: 0 5px;
+        font-size: calc(11px * var(--text-scale, 1));
+      }
+      #battle-hud #battle-dc {
+        flex-wrap: wrap;
+        justify-content: flex-end;
+      }
+      #battle-hud #battle-dc button {
+        min-width: 30px;
+        padding: 0 5px;
+        font-size: calc(11px * var(--text-scale, 1));
+      }
+      #battle-hud #battle-dc button.danger {
+        background: var(--danger);
+        border-color: var(--danger-line);
+      }
+      /* Situational rows hold their slots before they are needed (owner
+         rulings July 2026 — Parties first, Aim and Battery with it):
+         dimmed, with a placeholder at the buttons' height, so every
+         row's position is learned in calm water and nothing shifts when
+         the real controls swap in. */
+      #battle-hud .hud-row.idle,
+      #battle-hud .hud-group.idle {
+        opacity: 0.45;
+      }
+      #battle-hud .battle-idle-note {
+        display: flex;
+        align-items: center;
+        min-height: 31px;
+        font-size: calc(11px * var(--text-scale, 1));
+        color: var(--ink-mute);
+      }
+      /* The crew readout under Systems (owner request 19 Jul 2026): a
+         state line, not a control — and the one line on the strip that
+         turns the hunt's red once the pool nears the surrender floor. */
+      #battle-hud .battle-crew-note {
+        font-size: calc(10.5px * var(--text-scale, 1));
+        color: var(--ink-mute);
+        font-variant-numeric: tabular-nums;
+      }
+      #battle-hud .battle-crew-note.low {
+        color: rgb(var(--heat-rgb));
+      }
+      #battle-hud #battle-fire,
+      #battle-hud #battle-torps {
+        flex-wrap: wrap;
+        justify-content: flex-end;
+      }
+      #battle-hud #battle-fire button,
+      #battle-hud #battle-torps button,
+      #battle-hud #battle-secondaries {
+        min-width: 30px;
+        padding: 0 5px;
+        font-size: calc(11px * var(--text-scale, 1));
+      }
+      /* The distribution group grows so the mounts sit against the
+         secondary battery's order at the row's end. */
+      #battle-hud #battle-fire {
+        flex: 1;
+      }
+      #battle-hud #battle-fire button.danger,
+      #battle-hud #battle-torps button.danger {
+        background: var(--danger);
+        border-color: var(--danger-line);
+      }
+      /* The torpedo magazine chip: state, not a control — it sits beside
+         the FIRE TORPS button so the button itself only promises the tap
+         (owner ruling July 2026). */
+      #battle-hud .battle-ammo {
+        font-size: calc(11px * var(--text-scale, 1));
+        color: var(--ink-mute);
+        align-self: center;
+        white-space: nowrap;
+      }
+      /* The own-ship system strip: a small canvas the battle HUD draws the
+         damage glyphs onto (battleSystemsHud.ts). Block so no inline baseline
+         gap; JS sizes it to its content. */
+      #battle-hud #battle-systems {
+        display: block;
+      }
+      /* The tap-to-expand damage report (§8.2), on its own tier (owner
+         report August 2026, the small-iPhone playtest). It used to be
+         painted onto the plane at the canvas's z-index 1, under the
+         control strip: a wounded ship's report is taller than the clear
+         band above the strip on a small phone, so its last rows were
+         covered with no way to reach them. It now floats OVER the strip
+         (4) and under the briefs (9) — a verdict card and the menu still
+         outrank it — and scrolls inside itself.
+         The backdrop passes taps through, so tapping the sea dismisses
+         the report and tapping another hull switches to her exactly as
+         before; only the panel takes the finger, which is what lets it
+         scroll. It opens below the meter band, where it always did. */
+      #battle-report {
+        position: fixed;
+        left: 0;
+        right: 0;
+        top: 70px;
+        bottom: calc(env(safe-area-inset-bottom) + 8px);
+        z-index: 6;
+        display: none;
+        justify-content: center;
+        align-items: flex-start;
+        pointer-events: none;
+      }
+      #battle-report-panel {
+        position: relative;
+        display: flex;
+        flex-direction: column;
+        pointer-events: auto;
+        /* Its natural height, and never past the band it is given. */
+        max-height: 100%;
+        width: min(100% - 24px, 296px);
+        box-sizing: border-box;
+        /* Opaque, where the painted panel was 0.97: three per cent of
+           open sea showing through reads as nothing, three per cent of
+           the strip's lit buttons reads as a ghost behind the rows. */
+        background: rgb(16, 26, 44);
+        border: 1px solid rgba(107, 143, 191, 0.55);
+        border-radius: 10px;
+        /* Keeps the scroller inside the rounded corners. */
+        overflow: hidden;
+      }
+      #battle-report-scroll {
+        overflow-y: auto;
+        min-height: 0;
+        touch-action: pan-y;
+      }
+      #battle-report-canvas {
+        display: block;
+      }
+      /* There is more below: a hairline of shadow at the cut, so a
+         report that runs past the panel reads as scrollable rather than
+         as one that ends mid-row. Set by the panel only when it does. */
+      #battle-report-panel.scrolls::after {
+        content: '';
+        position: absolute;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        height: 14px;
+        pointer-events: none;
+        background: linear-gradient(
+          rgba(16, 26, 44, 0),
+          rgba(16, 26, 44, 0.95)
+        );
+      }
+      #battle-report-close {
+        position: absolute;
+        top: 0;
+        right: 0;
+        min-width: 40px;
+        min-height: 40px;
+        padding: 0;
+        color: var(--ink-mute);
+        /* The panel's own ground, so the ✕ stays legible over whatever
+           row has scrolled under it — it holds the corner, the header
+           scrolls past beneath. */
+        background: rgb(16, 26, 44);
+        border: 0;
+        border-bottom-left-radius: 10px;
+        font-family: var(--face-tech);
+        font-size: calc(15px * var(--text-scale, 1));
+        line-height: 1;
+      }
+      /* The briefing cards (combat and strategic onboarding): below the
+         sim cards (z 10) — a verdict card outranks them — and above the
+         battle strip (z 4) and title screen's siblings. Reuse the .card
+         grammar inside; the paragraphs take the typewriter flavour like
+         the sim-card narrative. */
+      #battle-brief,
+      #sailing-brief {
+        position: fixed;
+        inset: 0;
+        z-index: 9;
+        display: none;
+        align-items: center;
+        justify-content: center;
+        background: var(--overlay);
+        font-family: var(--face-tech);
+        color: var(--ink);
+        padding: max(16px, env(safe-area-inset-top))
+          max(16px, env(safe-area-inset-right))
+          max(16px, env(safe-area-inset-bottom))
+          max(16px, env(safe-area-inset-left));
+        pointer-events: auto;
+      }
+      #battle-brief .card-body,
+      #sailing-brief .card-body {
+        font-family: var(--face-type);
+        line-height: 1.55;
+        color: var(--flavour);
+      }
+      #battle-brief .card-option:disabled,
+      #sailing-brief .card-option:disabled {
+        opacity: 0.4;
+        cursor: default;
+      }
+      /* The recognition plates (Option B): the caption sits tight under
+         its silhouette in the technical face, like a book's plate line. */
+      #battle-brief .battle-brief-caption {
+        font-family: var(--face-tech);
+        font-size: 0.82em;
+        color: var(--ink-mute);
+        margin-top: 2px;
+      }
+      #battle-brief .battle-brief-dims {
+        font-family: var(--face-tech);
+        font-size: 0.74em;
+        color: var(--ink-mute);
+        opacity: 0.85;
+        margin-top: 0;
+      }
+      /* The damage survey (B-1): the yard's diagram on a card. */
+      .card-diagram {
+        width: 100%;
+        height: auto;
+        display: block;
+        margin: 6px 0 2px;
+      }
+      /* The menu tier (M5 shell): above the sim cards (z 10), below the
+         notices (z 40), so pause/settings stay reachable mid-card and
+         mid-battle. Reuses the .card grammar inside. */
+      .menu-overlay {
+        position: fixed;
+        inset: 0;
+        z-index: 30;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: var(--overlay);
+        font-family: var(--face-tech);
+        color: var(--ink);
+        padding: max(16px, env(safe-area-inset-top))
+          max(16px, env(safe-area-inset-right))
+          max(16px, env(safe-area-inset-bottom))
+          max(16px, env(safe-area-inset-left));
+        pointer-events: auto;
+      }
+      .menu-overlay button:disabled {
+        opacity: 0.45;
+      }
+      .settings-row {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 8px;
+        margin-top: 10px;
+        font-size: calc(14px * var(--text-scale, 1));
+      }
+      .settings-choices {
+        display: flex;
+        gap: 4px;
+      }
+      .settings-choices button {
+        min-height: 38px;
+        min-width: 44px;
+        padding: 0 10px;
+        font-size: calc(13px * var(--text-scale, 1));
+        color: var(--ink);
+        background: var(--chrome);
+        border: 1px solid var(--chrome-line);
+        border-radius: 6px;
+      }
+      .settings-choices button.active {
+        background: var(--chrome-active);
+        border-color: var(--chrome-active-line);
+      }
+      .settings-done {
+        margin-top: 14px;
+        width: 100%;
+      }
+      #menu-button {
+        position: fixed;
+        z-index: 30;
+        pointer-events: auto;
+        /* Top-right corner, inside the HUD's readout band (owner request
+           Aug 2026): the chart fits below that band, so the button no
+           longer covers any map. The first readout rows keep clear of it
+           (see the .hud-top clearance rule). */
+        right: calc(env(safe-area-inset-right) + 8px);
+        top: calc(env(safe-area-inset-top) + 8px);
+        min-width: 40px;
+        min-height: 38px;
+        padding: 0 10px;
+        font-size: calc(16px * var(--text-scale, 1));
+        color: var(--ink);
+        background: rgba(var(--chrome-rgb), 0.9);
+        border: 1px solid var(--chrome-line);
+        border-radius: 6px;
+      }
+      /* The §2 hard-pause banner floats OVER the battle plane just above
+         the strip (owner ruling 18 Jul 2026): the torpedo warning must
+         not shove every button down at the worst moment. It anchors to
+         the fixed strip, outside #battle-scroll so the cap never clips
+         it; the backing runs opaque enough to read over any sea. */
+      #battle-hud #battle-banner {
+        position: absolute;
+        left: 50%;
+        bottom: calc(100% + 8px);
+        transform: translateX(-50%);
+        width: max-content;
+        /* Symmetric clearance for the floating recenter control at the
+           strip's corner: the two share the shelf and never collide. */
+        max-width: calc(100% - 116px);
+        box-sizing: border-box;
+        margin: 0;
+        font-size: calc(12px * var(--text-scale, 1));
+        color: var(--banner);
+        background:
+          linear-gradient(var(--banner-bg), var(--banner-bg)),
+          rgba(var(--ground-rgb), 0.85);
+        border: 1px solid var(--banner-line);
+        border-radius: 6px;
+        padding: 4px 8px;
+        text-align: center;
+      }
+    </style>
+    <script type="module" crossorigin src="./assets/index-C4DduWua.js"></script>
+  </head>
+  <body>
+    <canvas id="game"></canvas>
+    <div id="hud"></div>
+    <div id="battle-hud"></div>
+    <div id="battle-report"></div>
+    <div id="card"></div>
+  </body>
+</html>

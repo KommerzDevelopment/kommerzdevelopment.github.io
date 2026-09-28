@@ -1,0 +1,22 @@
+# Kommerz Raider — crawler policy (owner ruling, September 2026).
+#
+# AI TRAINING crawlers are asked to stay out. Search engines and AI SEARCH
+# assistants are welcome: being found helps a free game find players, and
+# being folded into a training set gives it nothing back.
+#
+# This file is a request, honoured by well-behaved crawlers only. It is NOT
+# the billing protection — the site is static and served from GitHub Pages,
+# which has no metered billing at all, so no crawler can run up a bill here
+# whether it reads this file or not.
+
+User-agent: GPTBot
+User-agent: ClaudeBot
+User-agent: CCBot
+User-agent: Google-Extended
+User-agent: Applebot-Extended
+User-agent: Bytespider
+User-agent: meta-externalagent
+Disallow: /
+
+User-agent: *
+Allow: /
