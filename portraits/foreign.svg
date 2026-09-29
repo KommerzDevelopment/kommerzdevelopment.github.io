@@ -1,9 +1,0 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-label="portrait">
-  <rect width="128" height="128" fill="#101a2c"/>
-  <rect width="128" height="128" fill="#6a6f78" opacity="0.16"/>
-  <path d="M16 128 Q64 90 112 128 Z" fill="#25272c"/>
-  <path d="M56 100 L64 112 L72 100 L64 128 Z" fill="#e8e6e0"/>
-  <path d="M58 100 L64 106 L70 100 L64 96 Z" fill="#4a4f58"/>
-  <circle cx="64" cy="66" r="21" fill="#b3b9c2"/>
-  <path d="M43 60 a21 21 0 0 1 42 0 l-4 -8 a19 19 0 0 0 -34 0 Z" fill="#8d949f"/>
-</svg>
