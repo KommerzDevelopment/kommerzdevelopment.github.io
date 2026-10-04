@@ -55,6 +55,13 @@
         /* The battle view handles its own drag-pan and pinch-zoom, so the
            browser must not claim touch gestures on the canvas. */
         touch-action: none;
+        /* Nor a long press: the helm hold rests a finger on the ship, and
+           iOS would answer a resting finger with its callout or the
+           selection loupe (Android's long-press menu is stopped in
+           gestures.ts). */
+        -webkit-touch-callout: none;
+        -webkit-user-select: none;
+        user-select: none;
       }
       #hud {
         position: fixed;
@@ -1253,7 +1260,7 @@
         text-align: center;
       }
     </style>
-    <script type="module" crossorigin src="./assets/index-DsQv1fWY.js"></script>
+    <script type="module" crossorigin src="./assets/index-D2XP2Ya2.js"></script>
   </head>
   <body>
     <canvas id="game"></canvas>
