@@ -547,6 +547,18 @@
         font-size: calc(15px * var(--text-scale, 1));
         line-height: 1.45;
       }
+      /* A link inside the text (the about card's privacy and bug-report
+         notes) reads as the text does, underlined: chart-room ink, not a
+         browser's default blue on the navy card. */
+      .card-body a {
+        color: inherit;
+        text-decoration: underline;
+        text-underline-offset: 2px;
+      }
+      /* A note that explains the button above it sits close under it. */
+      .card-body-after-option {
+        margin-top: 8px;
+      }
       .card-options {
         display: flex;
         flex-direction: column;
@@ -574,8 +586,51 @@
         background: var(--chrome);
         border: 1px solid var(--chrome-line);
         border-radius: 6px;
-        /* A link can wear the row too (the about card's PayPal link). */
+        /* A link can wear the row too. */
         text-decoration: none;
+      }
+      /* The about card's donate link, dressed as PayPal's own gold button
+         (owner request, October 2026). The figures are PayPal's: the gold,
+         the 4 px corner and the hover dimming from its button SDK
+         (paypal-checkout-components, src/ui/buttons/styles/color.js), the
+         two blues of the name from its logo package (paypal-sdk-logos).
+         The gold is the same in either theme, as PayPal's is. Drawn here,
+         never fetched: the game phones nobody, PayPal included. */
+      .paypal-button {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        text-align: center;
+        min-height: 44px;
+        margin: 0 0 8px;
+        padding: 10px 16px;
+        box-sizing: border-box;
+        font-family: Verdana, 'Helvetica Neue', Arial, sans-serif;
+        font-size: calc(15px * var(--text-scale, 1));
+        color: #111;
+        background: #ffc439;
+        border-radius: 4px;
+        text-decoration: none;
+      }
+      .paypal-button:active {
+        filter: brightness(0.95);
+      }
+      @media (hover: hover) {
+        .paypal-button:hover {
+          filter: brightness(0.95);
+        }
+      }
+      .paypal-button:focus-visible {
+        outline: 2px solid #0066f5;
+        outline-offset: 2px;
+      }
+      .paypal-mark {
+        font-weight: 700;
+        font-style: italic;
+        color: #003087;
+      }
+      .paypal-pal {
+        color: #009cde;
       }
       .card-option-label {
         font-weight: 600;
@@ -1260,7 +1315,7 @@
         text-align: center;
       }
     </style>
-    <script type="module" crossorigin src="./assets/index-BmZPyiv4.js"></script>
+    <script type="module" crossorigin src="./assets/index-C6l395mr.js"></script>
   </head>
   <body>
     <canvas id="game"></canvas>
